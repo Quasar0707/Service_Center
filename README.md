@@ -3,6 +3,8 @@
 
 *Вариант СМО - 4*
 
+**Бизнес домен** - https://disk.yandex.ru/d/f1o_QxoLORBnTQ
+
 
 **Sequence диаграмма:**
 ![alt text](https://github.com/Quasar0707/Service_Center/blob/main/Sequence_Diagram.png?raw=true)
