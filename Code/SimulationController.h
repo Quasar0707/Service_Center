@@ -1,0 +1,93 @@
+#ifndef SIMULATIONCONTROLLER_H
+#define SIMULATIONCONTROLLER_H
+
+#include "Source.h"
+#include "Buffer.h"
+#include "Device.h"
+#include "Dispatcher.h"
+#include <vector>
+#include <queue>
+#include <map>
+#include <string>
+#include <iostream>
+#include <csignal>
+
+// Структура для события
+struct Event {
+  double time;          // Время события
+  std::string type;     // Тип события (GENERATION, SERVICE_COMPLETE)
+  int sourceId;         // ID источника
+  int deviceId;         // ID прибора
+  int requestId;        // ID заявки
+  Request request;      // Сама заявка
+
+  // Конструктор для события генерации
+  Event(double t, const std::string& ty, int srcId, int reqId, const Request& req)
+    : time(t), type(ty), sourceId(srcId), deviceId(-1), requestId(reqId), request(req) {}
+
+  // Конструктор для события завершения обслуживания
+  Event(double t, const std::string& ty, int devId, int reqId)
+    : time(t), type(ty), sourceId(-1), deviceId(devId), requestId(reqId) {}
+
+  // Оператор сравнения для приоритетной очереди
+  bool operator>(const Event& other) const {
+    return time > other.time;
+  }
+};
+
+class SimulationController {
+private:
+  std::vector<Source> sources;      // Вектор источников
+  Buffer buffer;                    // Буфер
+  std::vector<Device> devices;      // Вектор приборов
+  Dispatcher dispatcher;            // Диспетчер
+
+  // Статистика
+  int totalRequestsGenerated;
+  int totalRequestsRejected;
+  int totalRequestsCompleted;
+  std::map<int, int> requestsBySource;      // Количество заявок по источникам
+  std::map<int, int> rejectedBySource;      // Количество отклоненных заявок по источникам
+  std::map<int, int> completedBySource;     // Количество завершенных заявок по источникам
+  std::map<int, double> totalTimeInSystem;  // Общее время в системе по источникам
+  std::map<int, double> totalTimeWaiting;   // Общее время ожидания по источникам
+  std::map<int, double> totalTimeProcessing; // Общее время обработки по источникам
+
+  // Календарь событий
+  std::priority_queue<Event, std::vector<Event>, std::greater<Event>> eventQueue;
+
+  double currentTime;
+
+  // Параметры симуляции
+  double simulationEndTime; // Время окончания симуляции
+  int bufferSize;           // Размер буфера
+  double meanServiceTime;   // Среднее время обслуживания
+
+  // Счётчик для ID заявок
+  int nextRequestId;
+
+public:
+  SimulationController();
+
+  // Метод для запуска симуляции
+  void runSimulation();
+
+  // Метод для выполнения одного шага симуляции
+  bool stepSimulation();
+
+  // Метод для печати текущего состояния системы ОД1
+  void printCurrentState();
+
+  // Метод для печати сводной таблицы результатов __(прототип)__
+  void printSummary();
+
+  // Метод для инициализации системы
+  void initializeSystem();
+
+  // Методы для обработки различных типов событий
+  void handleGenerationEvent(const Event& event);
+  void handleServiceCompleteEvent(const Event& event);
+
+};
+
+#endif
