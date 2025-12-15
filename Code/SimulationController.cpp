@@ -2,7 +2,6 @@
 #include <iomanip>
 #include <cmath>
 
-// Объявление extern
 extern volatile sig_atomic_t g_signalRaised;
 
 SimulationController::SimulationController()
@@ -57,15 +56,18 @@ void SimulationController::initializeSystem() {
     totalTimeInSystem[i] = 0.0;
     totalTimeWaiting[i] = 0.0;
     totalTimeProcessing[i] = 0.0;
+    sumSqDiffWaitingTime[i] = 0.0;
+    sumSqDiffProcessingTime[i] = 0.0;
   }
 }
 
-void SimulationController::runSimulation() {
+// Пошаговый режим (ОД1)
+void SimulationController::runSimulationStepByStep() {
   std::cout << "=== Запуск пошаговой симуляции сервисного центра ===" << std::endl;
   std::cout << "Начальное состояние системы:" << std::endl;
   printCurrentState();
   std::cout << "\nНажмите Enter для выполнения следующего шага... (Ctrl+C для выхода)" << std::endl;
-  std::cin.get(); // Ждём первый ввод
+  std::cin.get();
   if (g_signalRaised == SIGINT) return;
 
   while (stepSimulation()) {
@@ -81,9 +83,18 @@ void SimulationController::runSimulation() {
   std::cout << "\nСимуляция завершена." << std::endl;
 }
 
+// Автоматический режим (ОР1)
+void SimulationController::runSimulationAutomatic() {
+
+  while (stepSimulation()) {
+    // Цикл работает до конца, без ввода
+  }
+
+  printSummary();
+}
+
 bool SimulationController::stepSimulation() {
   if (eventQueue.empty()) {
-    std::cout << "\nКалендарь событий пуст. Симуляция завершена." << std::endl;
     return false;
   }
 
@@ -91,7 +102,6 @@ bool SimulationController::stepSimulation() {
   eventQueue.pop();
 
   if (currentEvent.time > simulationEndTime) {
-    std::cout << "\nДостигнуто время окончания симуляции. Симуляция завершена." << std::endl;
     return false;
   }
 
@@ -155,12 +165,12 @@ void SimulationController::printCurrentState() {
   }
 
   std::cout << "\n--- КАЛЕНДАРЬ СОБЫТИЙ (оставшиеся) ---" << std::endl;
-  // Создаём копию очереди для вывода, так как нельзя напрямую пройтись по приоритетной очереди
   auto tempQueue = eventQueue;
   if (tempQueue.empty()) {
     std::cout << "  (пусто)" << std::endl;
   }
   else {
+    // Таблица
     std::cout << std::setw(10) << "Время" << " | " << std::setw(15) << "Тип" << " | " << std::setw(10) << "Источник" << " | " << std::setw(10) << "Прибор" << " | " << std::setw(10) << "Заявка" << std::endl;
     std::cout << std::string(70, '-') << std::endl;
     while (!tempQueue.empty()) {
@@ -185,7 +195,7 @@ void SimulationController::handleGenerationEvent(const Event& event) {
   totalRequestsGenerated++;
   requestsBySource[sourceId]++;
 
-  // время поступления в буфер
+  // Устанавливаем время поступления в буфер
   req.setTimeEnteredBuffer(currentTime);
 
   Request replacedReq; // Создаём объект для вытеснённой заявки
@@ -240,19 +250,52 @@ void SimulationController::handleServiceCompleteEvent(const Event& event) {
   double waitTime = totalTimeInSystemValue - serviceDuration;
   int sourceId = completedReq.getSourceId();
 
-  device.completeService(); // Освобождаем прибор
+  device.completeService(currentTime); // Передаём время завершения
 
   totalRequestsCompleted++;
   completedBySource[sourceId]++;
 
+  // Обновляем общие суммы
   totalTimeInSystem[sourceId] += totalTimeInSystemValue;
   totalTimeWaiting[sourceId] += waitTime;
   totalTimeProcessing[sourceId] += serviceDuration;
 
-  // Проверяем, можно ли назначить новую заявку на освободившийся прибор
+  // Обновляем суммы квадратов отклонений для дисперсии
+  // Для времени ожидания (T БП)
+  int n_prev_wait = completedBySource[sourceId] - 1; // Количество до этого завершения
+  double old_mean_wait = (n_prev_wait > 0) ? totalTimeWaiting[sourceId - 1] / n_prev_wait : 0.0; // Старое среднее T БП
+  double new_value_wait = waitTime; // Новое значение T БП для этой заявки
+  if (n_prev_wait == 0) {
+    // Если это первая завершённая заявка для источника i, сумма квадратов = 0
+    sumSqDiffWaitingTime[sourceId] = 0.0;
+  }
+  else {
+    // Обновляем сумму квадратов отклонений
+    double old_sum_sq_diff = sumSqDiffWaitingTime[sourceId];
+    // Вычисляем новое среднее после добавления этой заявки
+    double new_mean_wait = totalTimeWaiting[sourceId] / completedBySource[sourceId];
+    sumSqDiffWaitingTime[sourceId] = old_sum_sq_diff + (new_value_wait - old_mean_wait) * (new_value_wait - new_mean_wait);
+  }
+
+  // Для времени обслуживания (T обсл)
+  // Старое среднее T обсл
+  double old_mean_proc = (n_prev_wait > 0) ? totalTimeProcessing[sourceId - 1] / n_prev_wait : 0.0;
+  double new_value_proc = serviceDuration; // Новое значение T обсл для этой заявки
+  if (n_prev_wait == 0) {
+    // Если это первая завершённая заявка для источника i, сумма квадратов = 0
+    sumSqDiffProcessingTime[sourceId] = 0.0;
+  }
+  else {
+    // Обновляем сумму квадратов отклонений
+    double old_sum_sq_diff = sumSqDiffProcessingTime[sourceId];
+    // Вычисляем новое среднее после добавления этой заявки
+    double new_mean_proc = totalTimeProcessing[sourceId] / completedBySource[sourceId];
+    sumSqDiffProcessingTime[sourceId] = old_sum_sq_diff + (new_value_proc - old_mean_proc) * (new_value_proc - new_mean_proc);
+  }
+
+
   AssignmentResult assignment = dispatcher.assignToDevice(currentTime);
   if (assignment.success) {
-    // Планируем событие завершения для только что назначенной заявки
     Device& assignedDevice = devices[assignment.assignedDeviceId - 1];
     double serviceDuration = assignedDevice.getServiceTime();
     double serviceCompletionTime = assignment.serviceStartTime + serviceDuration;
@@ -261,22 +304,34 @@ void SimulationController::handleServiceCompleteEvent(const Event& event) {
   }
 }
 
+// Сводная таблица (ОР1)
 void SimulationController::printSummary() {
-  std::cout << "---------------Первая версия сводной таблицы результатов по завершению симуляции---------------\n\n";
-  std::cout << "Общее количество сгенерированных заявок: " << totalRequestsGenerated << std::endl;
-  std::cout << "Общее количество отклоненных заявок: " << totalRequestsRejected << std::endl;
-  std::cout << "Общее количество завершенных заявок: " << totalRequestsCompleted << std::endl;
+  std::cout << "\n--------------- СВОДНАЯ ТАБЛИЦА РЕЗУЛЬТАТОВ (ОР1) ---------------\n" << std::endl;
 
-  std::cout << "\n=== Статистика по источникам ===" << std::endl;
-  std::cout << std::setw(10) << "Источник" << std::setw(15) << "Сгенерировано" << std::setw(15) << "Отклонено" << std::setw(15) << "Завершено" << std::setw(20) << "Вероятность отказа" << std::endl;
+  std::cout << "Таблица 1: Характеристики источников ВС." << std::endl;
+  std::cout << std::setw(10) << "№ Источника  " << std::setw(15) << "Количество заявок" << std::setw(15) << "Pотк" << std::setw(15) << "Tпреб" << std::setw(15) << "TБП" << std::setw(15) << "Tобсл" << std::setw(15) << "ДБП" << std::setw(15) << "Добсл" << std::endl;
+
   for (int i = 1; i <= 3; ++i) {
-    double rejectionProb = (requestsBySource[i] > 0) ? static_cast<double>(rejectedBySource[i]) / requestsBySource[i] : 0.0;
-    std::cout << std::setw(10) << i << std::setw(15) << requestsBySource[i] << std::setw(15) << rejectedBySource[i] << std::setw(15) << completedBySource[i] << std::setw(20) << std::fixed << std::setprecision(4) << rejectionProb << std::endl;
+    double p_otk = (requestsBySource[i] > 0) ? static_cast<double>(rejectedBySource[i]) / requestsBySource[i] : 0.0;
+    double t_pr = (completedBySource[i] > 0) ? totalTimeInSystem[i] / completedBySource[i] : 0.0;
+    double t_bp = (completedBySource[i] > 0) ? totalTimeWaiting[i] / completedBySource[i] : 0.0;
+    double t_obsl = (completedBySource[i] > 0) ? totalTimeProcessing[i] / completedBySource[i] : 0.0;
+    double d_bp = (completedBySource[i] > 1) ? sumSqDiffWaitingTime[i] / (completedBySource[i] - 1) : 0.0; // Несмещенная оценка
+    double d_obsl = (completedBySource[i] > 1) ? sumSqDiffProcessingTime[i] / (completedBySource[i] - 1) : 0.0; // Несмещенная оценка
+
+    std::cout << std::setw(10) << "И" << i << std::setw(15) << requestsBySource[i] << std::setw(15) << std::fixed << std::setprecision(4) << p_otk
+      << std::setw(15) << t_pr << std::setw(15) << t_bp << std::setw(15) << t_obsl
+      << std::setw(15) << d_bp << std::setw(15) << d_obsl << std::endl;
+  }
+  std::cout << std::endl;
+
+  std::cout << "Таблица 2: Характеристики приборов ВС." << std::endl;
+  std::cout << std::setw(10) << "№ Прибора  " << std::setw(25) << "Коэффициент использования" << std::endl;
+
+  for (int i = 1; i <= 3; ++i) {
+    double k_isp = devices[i - 1].getTotalTimeBusy() / simulationEndTime;
+    std::cout << std::setw(10) << "П" << i << std::setw(25) << std::fixed << std::setprecision(4) << k_isp << std::endl;
   }
 
-  std::cout << "\n=== Коэффициент использования приборов ===" << std::endl;
-  for (int i = 1; i <= 3; ++i) {
-    // Коэффициент использования = общее время работы / общее время симуляции
-    std::cout << "Прибор " << i << ": обработано заявок " << devices[i - 1].getCurrentRequest().getRequestId() << " (Условный показатель)" << std::endl;
-  }
+  std::cout << "\n-----------------------------------------------------------------\n" << std::endl;
 }

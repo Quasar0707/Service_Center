@@ -63,7 +63,7 @@ int Buffer::findNextFreeSlot() {
       return idx;
     }
   }
-  // Буфер полон, возвращаем -1 (ошибка)
+  // Буфер полон
   return -1;
 }
 

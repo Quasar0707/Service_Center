@@ -36,7 +36,7 @@ void Dispatcher::addToBuffer(Request& req) {
 
 AssignmentResult Dispatcher::assignToDevice(double currentTime) {
   if (buffer->isEmpty()) {
-    return AssignmentResult(); // Нечего назначать
+    return AssignmentResult();
   }
 
   // Выбираем свободный прибор по кольцу (D2P2)
@@ -85,7 +85,6 @@ Request Dispatcher::selectRequestForService() {
 
     bool shouldUpdate = false;
     if (!maxReq) {
-      // Если это первая
       shouldUpdate = true;
     }
     else {

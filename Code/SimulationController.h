@@ -12,14 +12,13 @@
 #include <iostream>
 #include <csignal>
 
-// Структура для события
 struct Event {
   double time;          // Время события
   std::string type;     // Тип события (GENERATION, SERVICE_COMPLETE)
-  int sourceId;         // ID источника
-  int deviceId;         // ID прибора
+  int sourceId;         // ID источника (для GENERATION)
+  int deviceId;         // ID прибора (для SERVICE_COMPLETE)
   int requestId;        // ID заявки
-  Request request;      // Сама заявка
+  Request request;      // Сама заявка (для GENERATION)
 
   // Конструктор для события генерации
   Event(double t, const std::string& ty, int srcId, int reqId, const Request& req)
@@ -29,7 +28,7 @@ struct Event {
   Event(double t, const std::string& ty, int devId, int reqId)
     : time(t), type(ty), sourceId(-1), deviceId(devId), requestId(reqId) {}
 
-  // Оператор сравнения для приоритетной очереди
+  // Оператор сравнения для приоритетной очереди (меньшее время - выше приоритет)
   bool operator>(const Event& other) const {
     return time > other.time;
   }
@@ -53,9 +52,15 @@ private:
   std::map<int, double> totalTimeWaiting;   // Общее время ожидания по источникам
   std::map<int, double> totalTimeProcessing; // Общее время обработки по источникам
 
+  // Сумма квадратов отклонений для времени ожидания (T БП)
+  std::map<int, double> sumSqDiffWaitingTime;
+  // Сумма квадратов отклонений для времени обслуживания (T обсл)
+  std::map<int, double> sumSqDiffProcessingTime;
+
   // Календарь событий
   std::priority_queue<Event, std::vector<Event>, std::greater<Event>> eventQueue;
 
+  // Текущее модельное время
   double currentTime;
 
   // Параметры симуляции
@@ -63,22 +68,22 @@ private:
   int bufferSize;           // Размер буфера
   double meanServiceTime;   // Среднее время обслуживания
 
-  // Счётчик для ID заявок
+  // Счётчик для уникального ID заявок
   int nextRequestId;
 
 public:
   SimulationController();
 
-  // Метод для запуска симуляции
-  void runSimulation();
+  void runSimulationStepByStep(); // Пошаговый режим (ОД1)
+  void runSimulationAutomatic();  // Автоматический режим (ОР1)
 
   // Метод для выполнения одного шага симуляции
   bool stepSimulation();
 
-  // Метод для печати текущего состояния системы ОД1
+  // Метод для печати текущего состояния системы (ОД1)
   void printCurrentState();
 
-  // Метод для печати сводной таблицы результатов __(прототип)__
+  // Метод для печати сводной таблицы результатов (ОР1)
   void printSummary();
 
   // Метод для инициализации системы

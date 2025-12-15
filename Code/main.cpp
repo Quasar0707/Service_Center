@@ -20,18 +20,34 @@ using namespace std;
 
 int main() {
   setlocale(LC_ALL, "rus");
-
-  // Регистрируем обработчик сигнала SIGINT (Ctrl+C)
   std::signal(SIGINT, signalHandler);
 
-  // Создаем контроллер симуляции
+  cout << "Выберите режим работы симуляции:" << endl;
+  cout << "1. Пошаговый режим (ОД1)" << endl;
+  cout << "2. Автоматический режим (ОР1)" << endl;
+  cout << "Введите 1 или 2: ";
+
+  int mode_choice;
+  cin >> mode_choice;
+  cin.ignore();
+
   SimulationController simController;
 
-  // Запускаем симуляцию
-  simController.runSimulation();
+  if (mode_choice == 1) {
+    cout << "\nЗапуск пошаговой симуляции..." << endl;
+    simController.runSimulationStepByStep();
+  }
+  else if (mode_choice == 2) {
+    cout << "\nЗапуск автоматической симуляции..." << endl;
+    simController.runSimulationAutomatic();
+  }
+  else {
+    cout << "Неверный выбор. Запускаю пошаговый режим по умолчанию." << endl;
+    simController.runSimulationStepByStep();
+  }
 
   // Проверяем, был ли вызван сигнал завершения
-  if (g_signalRaised == SIGINT) {
+  if (g_signalRaised == SIGINT && mode_choice == 1) {
     std::cout << "\nПолучен сигнал SIGINT (Ctrl+C). Завершение программы." << std::endl;
     return 0;
   }

@@ -9,7 +9,6 @@ Request::Request()
 Request::Request(int reqId, int srcId, double time, Priority pri)
   : requestId(reqId), sourceId(srcId), creationTime(time), timeEnteredBuffer(0.0),
   priority(pri), status(RequestStatus::NEW) {
-  // Генерируем описание
   std::ostringstream oss;
   oss << "Заявка #" << requestId << " от Источника " << srcId
     << " (Приоритет: " << priorityToString(priority) << ")";
